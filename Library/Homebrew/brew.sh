@@ -414,7 +414,7 @@ then
   export HOMEBREW_BOTTLE_DOMAIN="$HOMEBREW_BOTTLE_DEFAULT_DOMAIN"
 fi
 
-export HOMEBREW_BREW_DEFAULT_GIT_REMOTE="https://github.com/Homebrew/brew"
+export HOMEBREW_BREW_DEFAULT_GIT_REMOTE="git@git://github.com/bitdotioinc/brew"
 if [[ -z "$HOMEBREW_BREW_GIT_REMOTE" ]]
 then
   HOMEBREW_BREW_GIT_REMOTE="$HOMEBREW_BREW_DEFAULT_GIT_REMOTE"
@@ -423,9 +423,9 @@ export HOMEBREW_BREW_GIT_REMOTE
 
 if [[ -n "$HOMEBREW_MACOS" ]] || [[ -n "$HOMEBREW_FORCE_HOMEBREW_ON_LINUX" ]]
 then
-  HOMEBREW_CORE_DEFAULT_GIT_REMOTE="https://github.com/Homebrew/homebrew-core"
+  HOMEBREW_CORE_DEFAULT_GIT_REMOTE="git@git://github.com/bitdotioinc/homebrew-core"
 else
-  HOMEBREW_CORE_DEFAULT_GIT_REMOTE="https://github.com/Homebrew/linuxbrew-core"
+  HOMEBREW_CORE_DEFAULT_GIT_REMOTE="UNSUPPORTED"
 fi
 export HOMEBREW_CORE_DEFAULT_GIT_REMOTE
 
