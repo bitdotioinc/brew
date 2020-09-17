@@ -543,7 +543,7 @@ update-preinstall() {
     then
       tap_fetch_head="$HOMEBREW_LIBRARY/Taps/homebrew/homebrew-cask/.git/FETCH_HEAD"
     else
-      tap_fetch_head="$HOMEBREW_LIBRARY/Taps/homebrew/homebrew-core/.git/FETCH_HEAD"
+      tap_fetch_head="$HOMEBREW_LIBRARY/Taps/bitdotioinc/homebrew-core/.git/FETCH_HEAD"
     fi
     if [[ -f "$tap_fetch_head" &&
           -n "$(find "$tap_fetch_head" -type f -mtime -"${HOMEBREW_AUTO_UPDATE_SECS}"s 2>/dev/null)" ]]
