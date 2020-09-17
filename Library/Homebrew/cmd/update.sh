@@ -46,8 +46,8 @@ git_init_if_necessary() {
     trap - EXIT
   fi
 
-  [[ -d "$HOMEBREW_LIBRARY/Taps/homebrew/homebrew-core" ]] || return
-  safe_cd "$HOMEBREW_LIBRARY/Taps/homebrew/homebrew-core"
+  [[ -d "$HOMEBREW_LIBRARY/Taps/bitdotioinc/homebrew-core" ]] || return
+  safe_cd "$HOMEBREW_LIBRARY/Taps/bitdotioinc/homebrew-core"
   if [[ ! -d ".git" ]]
   then
     set -e
@@ -381,7 +381,7 @@ EOS
       ! -x "$HOMEBREW_PREFIX/opt/git/bin/git" ]]
   then
     # we cannot install brewed git if homebrew/core is unavailable.
-    [[ -d "$HOMEBREW_LIBRARY/Taps/homebrew/homebrew-core" ]] && brew install git
+    [[ -d "$HOMEBREW_LIBRARY/Taps/bitdotioinc/homebrew-core" ]] && brew install git
     unset GIT_EXECUTABLE
     if ! git --version &>/dev/null
     then
@@ -433,9 +433,9 @@ EOS
   fi
 
   if [[ "$HOMEBREW_CORE_DEFAULT_GIT_REMOTE" != "$HOMEBREW_CORE_GIT_REMOTE" ]] &&
-     [[ -d "$HOMEBREW_LIBRARY/Taps/homebrew/homebrew-core" ]]
+     [[ -d "$HOMEBREW_LIBRARY/Taps/bitdotioinc/homebrew-core" ]]
   then
-    safe_cd "$HOMEBREW_LIBRARY/Taps/homebrew/homebrew-core"
+    safe_cd "$HOMEBREW_LIBRARY/Taps/bitdotioinc/homebrew-core"
     echo "HOMEBREW_CORE_GIT_REMOTE set: using $HOMEBREW_CORE_GIT_REMOTE for Homebrew/brew Git remote."
     git remote set-url origin "$HOMEBREW_CORE_GIT_REMOTE"
     git config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*"
@@ -450,7 +450,7 @@ EOS
         "$(git config remote.origin.url)" =~ ^git:// ]]
   then
     git config remote.origin.url "$HOMEBREW_BREW_GIT_REMOTE"
-    git config -f "$HOMEBREW_LIBRARY/Taps/homebrew/homebrew-core/.git/config" remote.origin.url "$HOMEBREW_CORE_GIT_REMOTE"
+    git config -f "$HOMEBREW_LIBRARY/Taps/bitdotioinc/homebrew-core/.git/config" remote.origin.url "$HOMEBREW_CORE_GIT_REMOTE"
   fi
 
   # kill all of subprocess on interrupt
@@ -483,7 +483,7 @@ EOS
     if [[ -z "$HOMEBREW_UPDATE_FORCE" ]]
     then
       [[ -n "$SKIP_FETCH_BREW_REPOSITORY" && "$DIR" = "$HOMEBREW_REPOSITORY" ]] && continue
-      [[ -n "$SKIP_FETCH_CORE_REPOSITORY" && "$DIR" = "$HOMEBREW_LIBRARY/Taps/homebrew/homebrew-core" ]] && continue
+      [[ -n "$SKIP_FETCH_CORE_REPOSITORY" && "$DIR" = "$HOMEBREW_LIBRARY/Taps/bitdotioinc/homebrew-core" ]] && continue
     fi
 
     # The upstream repository's default branch may not be master;
