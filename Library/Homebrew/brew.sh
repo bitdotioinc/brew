@@ -414,7 +414,7 @@ then
   export HOMEBREW_BOTTLE_DOMAIN="$HOMEBREW_BOTTLE_DEFAULT_DOMAIN"
 fi
 
-export HOMEBREW_BREW_DEFAULT_GIT_REMOTE="git@git://github.com/bitdotioinc/brew"
+export HOMEBREW_BREW_DEFAULT_GIT_REMOTE="https://github.com/bitdotioinc/brew"
 if [[ -z "$HOMEBREW_BREW_GIT_REMOTE" ]]
 then
   HOMEBREW_BREW_GIT_REMOTE="$HOMEBREW_BREW_DEFAULT_GIT_REMOTE"
@@ -423,7 +423,7 @@ export HOMEBREW_BREW_GIT_REMOTE
 
 if [[ -n "$HOMEBREW_MACOS" ]] || [[ -n "$HOMEBREW_FORCE_HOMEBREW_ON_LINUX" ]]
 then
-  HOMEBREW_CORE_DEFAULT_GIT_REMOTE="git@git://github.com/bitdotioinc/homebrew-core"
+  HOMEBREW_CORE_DEFAULT_GIT_REMOTE="https://github.com/bitdotioinc/homebrew-core"
 else
   HOMEBREW_CORE_DEFAULT_GIT_REMOTE="UNSUPPORTED"
 fi
@@ -543,7 +543,7 @@ update-preinstall() {
     then
       tap_fetch_head="$HOMEBREW_LIBRARY/Taps/homebrew/homebrew-cask/.git/FETCH_HEAD"
     else
-      tap_fetch_head="$HOMEBREW_LIBRARY/Taps/bitdotioinc/homebrew-core/.git/FETCH_HEAD"
+      tap_fetch_head="$HOMEBREW_LIBRARY/Taps/homebrew/homebrew-core/.git/FETCH_HEAD"
     fi
     if [[ -f "$tap_fetch_head" &&
           -n "$(find "$tap_fetch_head" -type f -mtime -"${HOMEBREW_AUTO_UPDATE_SECS}"s 2>/dev/null)" ]]
