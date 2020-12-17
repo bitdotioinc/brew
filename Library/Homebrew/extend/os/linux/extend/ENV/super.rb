@@ -1,6 +1,9 @@
+# typed: false
 # frozen_string_literal: true
 
 module Superenv
+  extend T::Sig
+
   # @private
   def self.bin
     (HOMEBREW_SHIMS_PATH/"linux/super").realpath
@@ -33,6 +36,7 @@ module Superenv
     )
   end
 
+  sig { returns(T.nilable(String)) }
   def determine_dynamic_linker_path
     path = "#{HOMEBREW_PREFIX}/lib/ld.so"
     return unless File.readable? path

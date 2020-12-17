@@ -1,20 +1,22 @@
+# typed: true
 # frozen_string_literal: true
 
 class Formula
   module Compat
-    def installed?
-      odeprecated "Formula#installed?",
-                  "Formula#latest_version_installed? (or Formula#any_version_installed? )"
-      latest_version_installed?
+    def installed_prefix
+      odisabled "Formula#installed_prefix",
+                "Formula#latest_installed_prefix (or Formula#any_installed_prefix)"
     end
 
-    def prepare_patches
-      if respond_to?(:patches)
-        active_spec.add_legacy_patches(patches)
-        odeprecated "patches", "patch do"
-      end
+    # The currently installed version for this formula. Will raise an exception
+    # if the formula is not installed.
+    # @private
+    def installed_version
+      odisabled "Formula#installed_version"
+    end
 
-      super
+    def opt_or_installed_prefix_keg
+      odisabled "Formula#opt_or_installed_prefix_keg", "Formula#any_installed_keg"
     end
   end
 

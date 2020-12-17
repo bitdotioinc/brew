@@ -1,5 +1,7 @@
+# typed: false
 # frozen_string_literal: true
 
+require "context"
 require "erb"
 
 module Utils
@@ -8,6 +10,8 @@ module Utils
   # @api private
   module Analytics
     class << self
+      extend T::Sig
+
       include Context
 
       def report(type, metadata = {})
@@ -54,7 +58,7 @@ module Utils
                  "--silent", "--output", "/dev/null",
                  "https://www.google-analytics.com/collect"
           end
-          Process.detach pid
+          Process.detach T.must(pid)
         end
       end
 
@@ -121,7 +125,7 @@ module Utils
         config_delete(:analyticsuuid)
       end
 
-      def output(filter: nil, args:)
+      def output(args:, filter: nil)
         days = args.days || "30"
         category = args.category || "install"
         json = formulae_brew_sh_json("analytics/#{category}/#{days}d.json")
@@ -138,9 +142,8 @@ module Utils
           else
             item["formula"]
           end
-          if filter.present?
-            next if key != filter && !key.start_with?("#{filter} ")
-          end
+          next if filter.present? && key != filter && !key.start_with?("#{filter} ")
+
           results[key] = item["count"].tr(",", "").to_i
         end
 
@@ -163,12 +166,8 @@ module Utils
           value.each do |days, results|
             days = days.to_i
             if full_analytics
-              if args.days.present?
-                next if args.days&.to_i != days
-              end
-              if args.category.present?
-                next if args.category != category
-              end
+              next if args.days.present? && args.days&.to_i != days
+              next if args.category.present? && args.category != category
 
               table_output(category, days, results)
             else
@@ -195,6 +194,7 @@ module Utils
         get_analytics(json, args: args)
       end
 
+      sig { returns(String) }
       def custom_prefix_label
         "custom-prefix"
       end
@@ -343,16 +343,19 @@ module Utils
         format("%<percent>.2f", percent: percent)
       end
 
+      sig { returns(String) }
       def formula_path
         "formula"
       end
       alias generic_formula_path formula_path
 
+      sig { returns(String) }
       def analytics_path
         "analytics"
       end
       alias generic_analytics_path analytics_path
 
+      sig { returns(String) }
       def cask_path
         "cask"
       end

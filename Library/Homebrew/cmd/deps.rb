@@ -1,3 +1,4 @@
+# typed: false
 # frozen_string_literal: true
 
 require "formula"
@@ -7,10 +8,13 @@ require "cask/caskroom"
 require "dependencies_helpers"
 
 module Homebrew
+  extend T::Sig
+
   extend DependenciesHelpers
 
   module_function
 
+  sig { returns(CLI::Parser) }
   def deps_args
     Homebrew::CLI::Parser.new do
       usage_banner <<~EOS
@@ -53,8 +57,14 @@ module Homebrew
              description: "Switch into the mode used by the `--all` option, but only list dependencies "\
                           "for each provided <formula>, one formula per line. This is used for "\
                           "debugging the `--installed`/`--all` display mode."
-
+      switch "--formula", "--formulae",
+             depends_on:  "--installed",
+             description: "Treat all named arguments as formulae."
+      switch "--cask", "--casks",
+             depends_on:  "--installed",
+             description: "Treat all named arguments as casks."
       conflicts "--installed", "--all"
+      conflicts "--formula", "--cask"
       formula_options
     end
   end
@@ -78,7 +88,13 @@ module Homebrew
       dependents = if args.named.present?
         sorted_dependents(args.named.to_formulae_and_casks)
       elsif args.installed?
-        sorted_dependents(Formula.installed + Cask::Caskroom.casks)
+        if args.formula? && !args.cask?
+          sorted_dependents(Formula.installed)
+        elsif args.cask? && !args.formula?
+          sorted_dependents(Cask::Caskroom.casks(config: Cask::Config.from_args(args)))
+        else
+          sorted_dependents(Formula.installed + Cask::Caskroom.casks(config: Cask::Config.from_args(args)))
+        end
       else
         raise FormulaUnspecifiedError
       end
@@ -96,7 +112,14 @@ module Homebrew
     if args.no_named?
       raise FormulaUnspecifiedError unless args.installed?
 
-      puts_deps sorted_dependents(Formula.installed + Cask::Caskroom.casks), recursive: recursive, args: args
+      sorted_dependents_formulae_and_casks = if args.formula? && !args.cask?
+        sorted_dependents(Formula.installed)
+      elsif args.cask? && !args.formula?
+        sorted_dependents(Cask::Caskroom.casks(config: Cask::Config.from_args(args)))
+      else
+        sorted_dependents(Formula.installed + Cask::Caskroom.casks(config: Cask::Config.from_args(args)))
+      end
+      puts_deps sorted_dependents_formulae_and_casks, recursive: recursive, args: args
       return
     end
 
@@ -144,7 +167,7 @@ module Homebrew
     str
   end
 
-  def deps_for_dependent(d, recursive: false, args:)
+  def deps_for_dependent(d, args:, recursive: false)
     includes, ignores = args_includes_ignores(args)
 
     deps = d.runtime_dependencies if @use_runtime_dependencies
@@ -160,11 +183,11 @@ module Homebrew
     deps + reqs.to_a
   end
 
-  def deps_for_dependents(dependents, recursive: false, args:, &block)
+  def deps_for_dependents(dependents, args:, recursive: false, &block)
     dependents.map { |d| deps_for_dependent(d, recursive: recursive, args: args) }.reduce(&block)
   end
 
-  def puts_deps(dependents, recursive: false, args:)
+  def puts_deps(dependents, args:, recursive: false)
     dependents.each do |dependent|
       deps = deps_for_dependent(dependent, recursive: recursive, args: args)
       condense_requirements(deps, args: args)
@@ -174,7 +197,7 @@ module Homebrew
     end
   end
 
-  def puts_deps_tree(dependents, recursive: false, args:)
+  def puts_deps_tree(dependents, args:, recursive: false)
     dependents.each do |d|
       puts d.full_name
       @dep_stack = []

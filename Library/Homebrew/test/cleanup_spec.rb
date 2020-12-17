@@ -1,3 +1,4 @@
+# typed: false
 # frozen_string_literal: true
 
 require "test/support/fixtures/testball"
@@ -36,11 +37,14 @@ describe Homebrew::Cleanup do
   around do |example|
     FileUtils.touch ds_store
     FileUtils.touch lock_file
+    FileUtils.mkdir_p HOMEBREW_LIBRARY/"Homebrew/vendor"
+    FileUtils.touch HOMEBREW_LIBRARY/"Homebrew/vendor/portable-ruby-version"
 
     example.run
   ensure
     FileUtils.rm_f ds_store
     FileUtils.rm_f lock_file
+    FileUtils.rm_rf HOMEBREW_LIBRARY/"Homebrew"
   end
 
   describe "::cleanup" do

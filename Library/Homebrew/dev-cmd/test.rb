@@ -1,3 +1,4 @@
+# typed: false
 # frozen_string_literal: true
 
 require "extend/ENV"
@@ -6,8 +7,11 @@ require "timeout"
 require "cli/parser"
 
 module Homebrew
+  extend T::Sig
+
   module_function
 
+  sig { returns(CLI::Parser) }
   def test_args
     Homebrew::CLI::Parser.new do
       usage_banner <<~EOS
@@ -85,11 +89,7 @@ module Homebrew
           #{f.path}
         ].concat(args.options_only)
 
-        if f.head?
-          exec_args << "--HEAD"
-        elsif f.devel?
-          exec_args << "--devel"
-        end
+        exec_args << "--HEAD" if f.head?
 
         Utils.safe_fork do
           if Sandbox.available?

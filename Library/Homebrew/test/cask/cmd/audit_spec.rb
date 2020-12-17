@@ -1,3 +1,4 @@
+# typed: false
 # frozen_string_literal: true
 
 require_relative "shared_examples/invalid_option"
@@ -20,7 +21,7 @@ describe Cask::Cmd::Audit, :cask do
 
     it "audits specified Casks if tokens are given" do
       cask_token = "nice-app"
-      expect(Cask::CaskLoader).to receive(:load).with(cask_token).and_return(cask)
+      expect(Cask::CaskLoader).to receive(:load).with(cask_token, any_args).and_return(cask)
 
       expect(Cask::Auditor).to receive(:audit)
         .with(cask, quarantine: true)
@@ -57,10 +58,10 @@ describe Cask::Cmd::Audit, :cask do
     described_class.run("casktoken", "--token-conflicts")
   end
 
-  it "passes `audit_strict` and `audit_token_conflicts` if the `--strict` flag is specified" do
+  it "passes `audit_strict` if the `--strict` flag is specified" do
     allow(Cask::CaskLoader).to receive(:load).and_return(cask)
     expect(Cask::Auditor).to receive(:audit)
-      .with(cask, audit_strict: true, audit_token_conflicts: true, quarantine: true)
+      .with(cask, audit_strict: true, quarantine: true)
       .and_return(result)
 
     described_class.run("casktoken", "--strict")
@@ -69,23 +70,16 @@ describe Cask::Cmd::Audit, :cask do
   it "passes `audit_online` if the `--online` flag is specified" do
     allow(Cask::CaskLoader).to receive(:load).and_return(cask)
     expect(Cask::Auditor).to receive(:audit)
-      .with(cask, audit_online: true, audit_appcast: true, audit_download: true, quarantine: true)
+      .with(cask, audit_online: true, quarantine: true)
       .and_return(result)
 
     described_class.run("casktoken", "--online")
   end
 
-  it "passes `audit_appcast`, `audit_download`, `audit_new_cask`, `audit_online`, `audit_strict` " \
-     "and `audit_token_conflicts` if the `--new-cask` flag is specified" do
+  it "passes `audit_new_cask` if the `--new-cask` flag is specified" do
     allow(Cask::CaskLoader).to receive(:load).and_return(cask)
     expect(Cask::Auditor).to receive(:audit)
-      .with(cask, audit_appcast:         true,
-                  audit_download:        true,
-                  audit_new_cask:        true,
-                  audit_online:          true,
-                  audit_strict:          true,
-                  audit_token_conflicts: true,
-                  quarantine:            true)
+      .with(cask, audit_new_cask: true, quarantine: true)
       .and_return(result)
 
     described_class.run("casktoken", "--new-cask")

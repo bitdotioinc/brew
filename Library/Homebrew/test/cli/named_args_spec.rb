@@ -1,3 +1,4 @@
+# typed: false
 # frozen_string_literal: true
 
 require "cli/named_args"
@@ -118,6 +119,47 @@ describe Homebrew::CLI::NamedArgs do
 
     it "returns an empty array when there are no matching casks" do
       expect(described_class.new("foo").homebrew_tap_cask_names).to be_empty
+    end
+  end
+
+  describe "#to_paths" do
+    let(:existing_path) { mktmpdir }
+    let(:formula_path) { Pathname("/path/to/foo.rb") }
+    let(:cask_path) { Pathname("/path/to/baz.rb") }
+
+    before do
+      allow(formula_path).to receive(:exist?).and_return(true)
+      allow(cask_path).to receive(:exist?).and_return(true)
+
+      allow(Formulary).to receive(:path).and_call_original
+      allow(Cask::CaskLoader).to receive(:path).and_call_original
+    end
+
+    it "returns taps, cask formula and existing paths" do
+      expect(Formulary).to receive(:path).with("foo").and_return(formula_path)
+      expect(Cask::CaskLoader).to receive(:path).with("baz").and_return(cask_path)
+
+      expect(described_class.new("homebrew/core", "foo", "baz", existing_path.to_s).to_paths)
+        .to eq [Tap.fetch("homebrew/core").path, formula_path, cask_path, existing_path]
+    end
+
+    it "returns both cask and formula paths if they exist" do
+      expect(Formulary).to receive(:path).with("foo").and_return(formula_path)
+      expect(Cask::CaskLoader).to receive(:path).with("baz").and_return(cask_path)
+
+      expect(described_class.new("foo", "baz").to_paths).to eq [formula_path, cask_path]
+    end
+
+    it "returns only formulae when `only: :formula` is specified" do
+      expect(Formulary).to receive(:path).with("foo").and_return(formula_path)
+
+      expect(described_class.new("foo", "baz").to_paths(only: :formula)).to eq [formula_path, Formulary.path("baz")]
+    end
+
+    it "returns only casks when `only: :cask` is specified" do
+      expect(Cask::CaskLoader).to receive(:path).with("foo").and_return(cask_path)
+
+      expect(described_class.new("foo", "baz").to_paths(only: :cask)).to eq [cask_path, Cask::CaskLoader.path("baz")]
     end
   end
 end

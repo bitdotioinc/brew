@@ -1,3 +1,4 @@
+# typed: false
 # frozen_string_literal: true
 
 require "utils/shell"
@@ -6,6 +7,10 @@ require "utils/shell"
 #
 # @api private
 module FormulaCellarChecks
+  # If the location of HOMEBREW_LIBRARY changes
+  # keg_relocate.rb, test/global_spec.rb, and this constant need to change.
+  REPOSITORY_AND_NOT_LIBRARY_REGEX = %r{#{HOMEBREW_REPOSITORY}(?!/Library/)}.freeze
+
   def check_env_path(bin)
     # warn the user if stuff was installed outside of their PATH
     return unless bin.directory?
@@ -154,7 +159,9 @@ module FormulaCellarChecks
     # Emacs itself can do what it wants
     return if name == "emacs"
 
-    elisps = (share/"emacs/site-lisp").children.select { |file| %w[.el .elc].include? file.extname }
+    elisps = (share/"emacs/site-lisp").children.select do |file|
+      Keg::ELISP_EXTENSIONS.include? file.extname
+    end
     return if elisps.empty?
 
     <<~EOS
@@ -201,6 +208,26 @@ module FormulaCellarChecks
         #{pythons * "\n        "}
       but this formula depends on:
         #{python_deps * "\n        "}
+    EOS
+  end
+
+  def check_repository_references(prefix)
+    return if HOMEBREW_PREFIX != HOMEBREW_REPOSITORY
+    return unless prefix.directory?
+
+    keg = Keg.new(prefix)
+
+    matches = []
+    keg.each_unique_file_matching(HOMEBREW_REPOSITORY) do |f|
+      matches << f.relative_path_from(keg.to_path) if f.read.match? REPOSITORY_AND_NOT_LIBRARY_REGEX
+    end
+
+    return if matches.empty?
+
+    <<~EOS
+      Files were found with references to the Homebrew repository directory
+      that are outside of the Library directory. The offending files are:
+        #{matches * "\n  "}
     EOS
   end
 
@@ -262,6 +289,18 @@ module FormulaCellarChecks
     EOS
   end
 
+  def check_python_symlinks(name, keg_only)
+    return unless keg_only
+    return unless name.start_with? "python"
+
+    return if %w[pip3 wheel3].none? do |l|
+      link = HOMEBREW_PREFIX/"bin"/l
+      link.exist? && File.realpath(link).start_with?(HOMEBREW_CELLAR/name)
+    end
+
+    "Python formulae that are keg-only should not create `pip3` and `wheel3` symlinks"
+  end
+
   def audit_installed
     @new_formula ||= false
 
@@ -277,8 +316,10 @@ module FormulaCellarChecks
     problem_if_output(check_elisp_dirname(formula.share, formula.name))
     problem_if_output(check_elisp_root(formula.share, formula.name))
     problem_if_output(check_python_packages(formula.lib, formula.deps))
+    problem_if_output(check_repository_references(formula.prefix))
     problem_if_output(check_shim_references(formula.prefix))
     problem_if_output(check_plist(formula.prefix, formula.plist))
+    problem_if_output(check_python_symlinks(formula.name, formula.keg_only?))
   end
   alias generic_audit_installed audit_installed
 

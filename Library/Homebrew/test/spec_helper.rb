@@ -1,3 +1,4 @@
+# typed: false
 # frozen_string_literal: true
 
 if ENV["HOMEBREW_TESTS_COVERAGE"]
@@ -25,6 +26,7 @@ end
 require "rspec/its"
 require "rspec/wait"
 require "rspec/retry"
+require "rspec/sorbet"
 require "rubocop"
 require "rubocop/rspec/support"
 require "find"
@@ -36,6 +38,7 @@ $LOAD_PATH.push(File.expand_path("#{ENV["HOMEBREW_LIBRARY"]}/Homebrew/test/suppo
 require_relative "../global"
 
 require "test/support/no_seed_progress_formatter"
+require "test/support/github_formatter"
 require "test/support/helper/cask"
 require "test/support/helper/fixtures"
 require "test/support/helper/formula"
@@ -56,6 +59,10 @@ TEST_DIRECTORIES = [
   HOMEBREW_TEMP,
 ].freeze
 
+# Make `instance_double` and `class_double`
+# work when type-checking is active.
+RSpec::Sorbet.allow_doubles!
+
 RSpec.configure do |config|
   config.order = :random
 
@@ -73,10 +80,15 @@ RSpec.configure do |config|
   if ENV["CI"]
     config.verbose_retry = true
     config.display_try_failure_messages = true
-    config.default_retry_count = 2
+
+    config.around(:each, :integration_test) do |example|
+      example.metadata[:timeout] ||= 120
+      example.run
+    end
 
     config.around(:each, :needs_network) do |example|
-      example.run_with_retry retry: 3, retry_wait: 3
+      example.metadata[:timeout] ||= 120
+      example.run_with_retry retry: 5, retry_wait: 5
     end
   end
 
@@ -94,15 +106,15 @@ RSpec.configure do |config|
   config.include(Test::Helper::OutputAsTTY)
 
   config.before(:each, :needs_compat) do
-    skip "Requires compatibility layer." if ENV["HOMEBREW_NO_COMPAT"]
+    skip "Requires the compatibility layer." if ENV["HOMEBREW_NO_COMPAT"]
   end
 
   config.before(:each, :needs_linux) do
-    skip "Not on Linux." unless OS.linux?
+    skip "Not running on Linux." unless OS.linux?
   end
 
   config.before(:each, :needs_macos) do
-    skip "Not on macOS." unless OS.mac?
+    skip "Not running on macOS." unless OS.mac?
   end
 
   config.before(:each, :needs_java) do
@@ -112,11 +124,11 @@ RSpec.configure do |config|
     else
       which("java")
     end
-    skip "Java not installed." unless java_installed
+    skip "Java is not installed." unless java_installed
   end
 
   config.before(:each, :needs_python) do
-    skip "Python not installed." unless which("python")
+    skip "Python is not installed." unless which("python")
   end
 
   config.before(:each, :needs_network) do
@@ -124,17 +136,23 @@ RSpec.configure do |config|
   end
 
   config.before(:each, :needs_svn) do
-    skip "subversion not installed." unless quiet_system "#{HOMEBREW_SHIMS_PATH}/scm/svn", "--version"
+    svn_shim = HOMEBREW_SHIMS_PATH/"scm/svn"
+    skip "Subversion is not installed." unless quiet_system svn_shim, "--version"
 
+    svn_shim_path = Pathname(Utils.popen_read(svn_shim, "--homebrew=print-path").chomp.presence)
     svn_paths = PATH.new(ENV["PATH"])
+    svn_paths.prepend(svn_shim_path.dirname)
+
     if OS.mac?
       xcrun_svn = Utils.popen_read("xcrun", "-f", "svn")
       svn_paths.append(File.dirname(xcrun_svn)) if $CHILD_STATUS.success? && xcrun_svn.present?
     end
 
     svn = which("svn", svn_paths)
+    skip "svn is not installed." unless svn
+
     svnadmin = which("svnadmin", svn_paths)
-    skip "subversion not installed." if !svn || !svnadmin
+    skip "svnadmin is not installed." unless svnadmin
 
     ENV["PATH"] = PATH.new(ENV["PATH"])
                       .append(svn.dirname)
@@ -142,7 +160,7 @@ RSpec.configure do |config|
   end
 
   config.before(:each, :needs_unzip) do
-    skip "unzip not installed." unless which("unzip")
+    skip "Unzip is not installed." unless which("unzip")
   end
 
   config.around do |example|
@@ -181,20 +199,15 @@ RSpec.configure do |config|
       end
 
       begin
-        timeout = example.metadata.fetch(:timeout, 120)
-        inner_timeout = nil
+        timeout = example.metadata.fetch(:timeout, 60)
         Timeout.timeout(timeout) do
           example.run
-        rescue Timeout::Error => e
-          inner_timeout = e
         end
-      rescue Timeout::Error
-        raise "Example exceeded maximum runtime of #{timeout} seconds."
+      rescue Timeout::Error => e
+        example.example.set_exception(e)
       end
-
-      raise inner_timeout if inner_timeout
     rescue SystemExit => e
-      raise "Unexpected exit with status #{e.status}."
+      example.example.set_exception(e)
     ensure
       ENV.replace(@__env)
 
@@ -229,6 +242,10 @@ RSpec.configure do |config|
         CoreTap.instance.path/".git",
         CoreTap.instance.alias_dir,
         CoreTap.instance.path/"formula_renames.json",
+        CoreTap.instance.path/"tap_migrations.json",
+        CoreTap.instance.path/"audit_exceptions",
+        CoreTap.instance.path/"style_exceptions",
+        CoreTap.instance.path/"pypi_formula_mappings.json",
         *Pathname.glob("#{HOMEBREW_CELLAR}/*/"),
       ]
 
@@ -255,5 +272,12 @@ RSpec::Matchers.define :a_json_string do
     true
   rescue JSON::ParserError
     false
+  end
+end
+
+# Match consecutive elements in an array.
+RSpec::Matchers.define :array_including_cons do |*cons|
+  match do |actual|
+    expect(actual.each_cons(cons.size)).to include(cons)
   end
 end

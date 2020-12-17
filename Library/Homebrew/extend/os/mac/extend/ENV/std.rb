@@ -1,3 +1,4 @@
+# typed: false
 # frozen_string_literal: true
 
 module Stdenv
@@ -6,30 +7,30 @@ module Stdenv
   undef homebrew_extra_pkg_config_paths, x11
 
   def homebrew_extra_pkg_config_paths
-    ["#{HOMEBREW_LIBRARY}/Homebrew/os/mac/pkgconfig/#{MacOS.version}"]
+    ["#{HOMEBREW_LIBRARY}/Homebrew/os/mac/pkgconfig/#{MacOS.sdk_version}"]
   end
 
   def x11
     # There are some config scripts here that should go in the PATH
-    append_path "PATH", MacOS::X11.bin.to_s
+    append_path "PATH", MacOS::XQuartz.bin.to_s
 
     # Append these to PKG_CONFIG_LIBDIR so they are searched
     # *after* our own pkgconfig directories, as we dupe some of the
     # libs in XQuartz.
-    append_path "PKG_CONFIG_LIBDIR", "#{MacOS::X11.lib}/pkgconfig"
-    append_path "PKG_CONFIG_LIBDIR", "#{MacOS::X11.share}/pkgconfig"
+    append_path "PKG_CONFIG_LIBDIR", "#{MacOS::XQuartz.lib}/pkgconfig"
+    append_path "PKG_CONFIG_LIBDIR", "#{MacOS::XQuartz.share}/pkgconfig"
 
-    append "LDFLAGS", "-L#{MacOS::X11.lib}"
-    append_path "CMAKE_PREFIX_PATH", MacOS::X11.prefix.to_s
-    append_path "CMAKE_INCLUDE_PATH", MacOS::X11.include.to_s
-    append_path "CMAKE_INCLUDE_PATH", "#{MacOS::X11.include}/freetype2"
+    append "LDFLAGS", "-L#{MacOS::XQuartz.lib}"
+    append_path "CMAKE_PREFIX_PATH", MacOS::XQuartz.prefix.to_s
+    append_path "CMAKE_INCLUDE_PATH", MacOS::XQuartz.include.to_s
+    append_path "CMAKE_INCLUDE_PATH", "#{MacOS::XQuartz.include}/freetype2"
 
-    append "CPPFLAGS", "-I#{MacOS::X11.include}"
-    append "CPPFLAGS", "-I#{MacOS::X11.include}/freetype2"
+    append "CPPFLAGS", "-I#{MacOS::XQuartz.include}"
+    append "CPPFLAGS", "-I#{MacOS::XQuartz.include}/freetype2"
 
-    append_path "ACLOCAL_PATH", "#{MacOS::X11.share}/aclocal"
+    append_path "ACLOCAL_PATH", "#{MacOS::XQuartz.share}/aclocal"
 
-    append "CFLAGS", "-I#{MacOS::X11.include}" unless MacOS::CLT.installed?
+    append "CFLAGS", "-I#{MacOS::XQuartz.include}" unless MacOS::CLT.installed?
   end
 
   def setup_build_environment(**options)
@@ -83,6 +84,7 @@ module Stdenv
     sdk = formula ? MacOS.sdk_for_formula(formula, version) : MacOS.sdk(version)
     return if !MacOS.sdk_root_needed? && sdk&.source != :xcode
 
+    Homebrew::Diagnostic.checks(:fatal_setup_build_environment_checks)
     sdk = sdk.path
 
     # Extra setup to support Xcode 4.3+ without CLT.
@@ -99,8 +101,8 @@ module Stdenv
     append_path "CMAKE_FRAMEWORK_PATH", "#{sdk}/System/Library/Frameworks"
   end
 
-  # Some configure scripts won't find libxml2 without help
-  # This is a no-op with macOS SDK 10.15.4 and later
+  # Some configure scripts won't find libxml2 without help.
+  # This is a no-op with macOS SDK 10.15.4 and later.
   def libxml2
     sdk = self["SDKROOT"] || MacOS.sdk_path_if_needed
     if !sdk

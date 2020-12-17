@@ -1,3 +1,4 @@
+# typed: true
 # frozen_string_literal: true
 
 module OS
@@ -6,6 +7,8 @@ module OS
     #
     # @api private
     module Glibc
+      extend T::Sig
+
       module_function
 
       def system_version
@@ -17,6 +20,7 @@ module OS
         @system_version = Version.new version
       end
 
+      sig { returns(Version) }
       def minimum_version
         Version.new "2.13"
       end
