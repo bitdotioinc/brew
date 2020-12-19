@@ -1,11 +1,15 @@
+# typed: true
 # frozen_string_literal: true
 
 require "formula"
 require "cli/parser"
 
 module Homebrew
+  extend T::Sig
+
   module_function
 
+  sig { returns(CLI::Parser) }
   def bump_revision_args
     Homebrew::CLI::Parser.new do
       usage_banner <<~EOS
@@ -40,10 +44,15 @@ module Homebrew
         end
 
         old = if formula.license
-          license_string = if formula.license.length > 1
-            formula.license
+          license_string = case formula.license
+          when String
+            "\"#{formula.license}\""
+          when Symbol
+            ":#{formula.license}"
           else
-            "\"#{formula.license.first}\""
+            formula.license.to_s.gsub(/:(\w+)=>/, '\1: ')                   # Change `:any_of=>` to `any_of: `
+                   .tr("{}", "")                                            # Remove braces
+                   .gsub(/=>with: "([a-zA-Z0-9-]+)"/, ' => { with: "\1" }') # Add braces and spacing around exceptions
           end
           # insert replacement revision after license
           <<~EOS

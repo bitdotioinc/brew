@@ -1,3 +1,4 @@
+# typed: false
 # frozen_string_literal: true
 
 module Homebrew
@@ -41,8 +42,8 @@ module Homebrew
     end
 
     class Checks
-      undef fatal_build_from_source_checks, supported_configuration_checks,
-            build_from_source_checks
+      undef fatal_build_from_source_checks, fatal_setup_build_environment_checks,
+            supported_configuration_checks, build_from_source_checks
 
       def fatal_build_from_source_checks
         %w[
@@ -54,8 +55,15 @@ module Homebrew
         ].freeze
       end
 
+      def fatal_setup_build_environment_checks
+        %w[
+          check_if_supported_sdk_available
+        ].freeze
+      end
+
       def supported_configuration_checks
         %w[
+          check_for_unsupported_arch
           check_for_unsupported_macos
         ].freeze
       end
@@ -83,18 +91,30 @@ module Homebrew
         nil
       end
 
+      def check_for_unsupported_arch
+        return if Homebrew::EnvConfig.developer?
+        return unless Hardware::CPU.arm?
+
+        <<~EOS
+          You are running macOS on a #{Hardware::CPU.arch} CPU architecture.
+          We do not provide support for this (yet).
+          Reinstall Homebrew under Rosetta 2 until we support it.
+          #{please_create_pull_requests}
+        EOS
+      end
+
       def check_for_unsupported_macos
         return if Homebrew::EnvConfig.developer?
 
         who = +"We"
-        if OS::Mac.prerelease?
-          what = "pre-release version"
+        what = if OS::Mac.prerelease?
+          "pre-release version"
         elsif OS::Mac.outdated_release?
           who << " (and Apple)"
-          what = "old version"
-        else
-          return
+          "old version"
         end
+        return if what.blank?
+
         who.freeze
 
         <<~EOS
@@ -178,13 +198,12 @@ module Homebrew
       end
 
       def check_ruby_version
-        ruby_version = "2.6.3"
-        return if RUBY_VERSION == ruby_version
+        return if RUBY_VERSION == HOMEBREW_REQUIRED_RUBY_VERSION
         return if Homebrew::EnvConfig.developer? && OS::Mac.prerelease?
 
         <<~EOS
           Ruby version #{RUBY_VERSION} is unsupported on #{MacOS.version}. Homebrew
-          is developed and tested on Ruby #{ruby_version}, and may not work correctly
+          is developed and tested on Ruby #{HOMEBREW_REQUIRED_RUBY_VERSION}, and may not work correctly
           on other Rubies. Patches are accepted as long as they don't cause breakage
           on supported Rubies.
         EOS
@@ -222,7 +241,7 @@ module Homebrew
         <<~EOS
           Your Xcode is configured with an invalid path.
           You should change it to the correct path:
-            sudo xcode-select -switch #{path}
+            sudo xcode-select --switch #{path}
         EOS
       end
 
@@ -246,7 +265,7 @@ module Homebrew
           Your XQuartz (#{MacOS::XQuartz.version}) is outdated.
           Please install XQuartz #{MacOS::XQuartz.latest_version} (or delete the current version).
           XQuartz can be updated using Homebrew Cask by running:
-            brew cask reinstall xquartz
+            brew reinstall xquartz
         EOS
       end
 
@@ -405,8 +424,10 @@ module Homebrew
         locator = MacOS.sdk_locator
 
         source = if locator.source == :clt
+          update_instructions = MacOS::CLT.update_instructions
           "CLT"
         else
+          update_instructions = MacOS::Xcode.update_instructions
           "Xcode"
         end
 
@@ -414,6 +435,7 @@ module Homebrew
           Your #{source} does not support macOS #{MacOS.version}.
           It is either outdated or was modified.
           Please update your #{source} or delete it if no updates are available.
+          #{update_instructions}
         EOS
       end
     end

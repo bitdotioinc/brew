@@ -1,3 +1,4 @@
+# typed: false
 # frozen_string_literal: true
 
 if ENV["HOMEBREW_STACKPROF"]
@@ -12,9 +13,15 @@ raise "HOMEBREW_BREW_FILE was not exported! Please call bin/brew directly!" unle
 std_trap = trap("INT") { exit! 130 } # no backtrace thanks
 
 # check ruby version before requiring any modules.
+unless ENV["HOMEBREW_REQUIRED_RUBY_VERSION"]
+  raise "HOMEBREW_REQUIRED_RUBY_VERSION was not exported! Please call bin/brew directly!"
+end
+
+REQUIRED_RUBY_X, REQUIRED_RUBY_Y, = ENV["HOMEBREW_REQUIRED_RUBY_VERSION"].split(".").map(&:to_i)
 RUBY_X, RUBY_Y, = RUBY_VERSION.split(".").map(&:to_i)
-if RUBY_X < 2 || (RUBY_X == 2 && RUBY_Y < 6)
-  raise "Homebrew must be run under Ruby 2.6! You're running #{RUBY_VERSION}."
+if RUBY_X < REQUIRED_RUBY_X || (RUBY_X == REQUIRED_RUBY_X && RUBY_Y < REQUIRED_RUBY_Y)
+  raise "Homebrew must be run under Ruby #{REQUIRED_RUBY_X}.#{REQUIRED_RUBY_Y}! " \
+        "You're running #{RUBY_VERSION}."
 end
 
 # Also define here so we can rescue regardless of location.
@@ -39,6 +46,11 @@ end
 begin
   trap("INT", std_trap) # restore default CTRL-C handler
 
+  if ENV["CI"]
+    $stdout.sync = true
+    $stderr.sync = true
+  end
+
   empty_argv = ARGV.empty?
   help_flag_list = %w[-h --help --usage -?]
   help_flag = !ENV["HOMEBREW_HELP"].nil?
@@ -52,7 +64,7 @@ begin
       # Command-style help: `help <cmd>` is fine, but `<cmd> help` is not.
       help_flag = true
       help_cmd_index = i
-    elsif !cmd && !help_flag_list.include?(arg)
+    elsif !cmd && help_flag_list.exclude?(arg)
       cmd = ARGV.delete_at(i)
       cmd = Commands::HOMEBREW_INTERNAL_COMMAND_ALIASES.fetch(cmd, cmd)
     end
@@ -61,7 +73,6 @@ begin
   ARGV.delete_at(help_cmd_index) if help_cmd_index
 
   args = Homebrew::CLI::Parser.new.parse(ARGV.dup.freeze, ignore_invalid_options: true)
-  Homebrew.args = args
   Context.current = args.context
 
   path = PATH.new(ENV["PATH"])
@@ -133,10 +144,12 @@ begin
         brew_uid = HOMEBREW_BREW_FILE.stat.uid
         tap_commands += %W[/usr/bin/sudo -u ##{brew_uid}] if Process.uid.zero? && !brew_uid.zero?
       end
-      tap_commands += %W[#{HOMEBREW_BREW_FILE} tap #{possible_tap.name}]
+      quiet_arg = args.quiet? ? "--quiet" : nil
+      tap_commands += [HOMEBREW_BREW_FILE, "tap", *quiet_arg, possible_tap.name]
       safe_system(*tap_commands)
     end
 
+    ARGV << "--help" if help_flag
     exec HOMEBREW_BREW_FILE, cmd, *ARGV
   end
 rescue UsageError => e
@@ -156,7 +169,7 @@ rescue BuildError => e
   if e.formula.head? || e.formula.deprecated? || e.formula.disabled?
     $stderr.puts <<~EOS
       Please create pull requests instead of asking for help on Homebrew's GitHub,
-      Discourse, Twitter or IRC.
+      Twitter or any other official channels.
     EOS
   end
 

@@ -1,3 +1,4 @@
+# typed: false
 # frozen_string_literal: true
 
 require "formula_installer"
@@ -7,7 +8,6 @@ require "cask/topological_hash"
 require "cask/config"
 require "cask/download"
 require "cask/staged"
-require "cask/verify"
 require "cask/quarantine"
 
 require "cgi"
@@ -17,9 +17,11 @@ module Cask
   #
   # @api private
   class Installer
+    extend T::Sig
+
     extend Predicable
     # TODO: it is unwise for Cask::Staged to be a module, when we are
-    #       dealing with both staged and unstaged Casks here. This should
+    #       dealing with both staged and unstaged casks here. This should
     #       either be a class which is only sometimes instantiated, or there
     #       should be explicit checks on whether staged state is valid in
     #       every method.
@@ -28,7 +30,8 @@ module Cask
     def initialize(cask, command: SystemCommand, force: false,
                    skip_cask_deps: false, binaries: true, verbose: false,
                    require_sha: false, upgrade: false,
-                   installed_as_dependency: false, quarantine: true)
+                   installed_as_dependency: false, quarantine: true,
+                   verify_download_integrity: true)
       @cask = cask
       @command = command
       @force = force
@@ -40,6 +43,7 @@ module Cask
       @upgrade = upgrade
       @installed_as_dependency = installed_as_dependency
       @quarantine = quarantine
+      @verify_download_integrity = verify_download_integrity
     end
 
     attr_predicate :binaries?, :force?, :skip_cask_deps?, :require_sha?,
@@ -62,10 +66,9 @@ module Cask
       odebug "Cask::Installer#fetch"
 
       verify_has_sha if require_sha? && !force?
-      download
-      verify
-
       satisfy_dependencies
+
+      download
     end
 
     def stage
@@ -99,7 +102,7 @@ module Cask
       opoo "macOS's Gatekeeper has been disabled for this Cask" unless quarantine?
       stage
 
-      @cask.config = Config.global.merge(old_config)
+      @cask.config = @cask.default_config.merge(old_config)
 
       install_artifacts
 
@@ -141,6 +144,7 @@ module Cask
       Installer.new(installed_cask, binaries: binaries?, verbose: verbose?, force: true, upgrade: upgrade?).uninstall
     end
 
+    sig { returns(String) }
     def summary
       s = +""
       s << "#{Homebrew::EnvConfig.install_badge}  " unless Homebrew::EnvConfig.no_emoji?
@@ -148,37 +152,33 @@ module Cask
       s.freeze
     end
 
+    sig { returns(Pathname) }
     def download
-      return @downloaded_path if @downloaded_path
-
-      odebug "Downloading"
-      @downloaded_path = Download.new(@cask, force: false, quarantine: quarantine?).perform
-      odebug "Downloaded to -> #{@downloaded_path}"
-      @downloaded_path
+      @download ||= Download.new(@cask, quarantine: quarantine?)
+                            .fetch(verify_download_integrity: @verify_download_integrity)
     end
 
     def verify_has_sha
       odebug "Checking cask has checksum"
       return unless @cask.sha256 == :no_check
 
-      raise CaskNoShasumError, @cask.token
-    end
-
-    def verify
-      Verify.all(@cask, @downloaded_path)
+      raise CaskError, <<~EOS
+        Cask '#{@cask}' does not have a sha256 checksum defined and was not installed.
+        This means you have the #{Formatter.identifier("--require-sha")} option set, perhaps in your HOMEBREW_CASK_OPTS.
+      EOS
     end
 
     def primary_container
       @primary_container ||= begin
-        download
-        UnpackStrategy.detect(@downloaded_path, type: @cask.container&.type, merge_xattrs: true)
+        downloaded_path = download
+        UnpackStrategy.detect(downloaded_path, type: @cask.container&.type, merge_xattrs: true)
       end
     end
 
-    def extract_primary_container
+    def extract_primary_container(to: @cask.staged_path)
       odebug "Extracting primary container"
 
-      odebug "Using container class #{primary_container.class} for #{@downloaded_path}"
+      odebug "Using container class #{primary_container.class} for #{primary_container.path}"
 
       basename = CGI.unescape(File.basename(@cask.url.path))
 
@@ -190,16 +190,16 @@ module Cask
           FileUtils.chmod_R "+rw", tmpdir/nested_container, force: true, verbose: verbose?
 
           UnpackStrategy.detect(tmpdir/nested_container, merge_xattrs: true)
-                        .extract_nestedly(to: @cask.staged_path, verbose: verbose?)
+                        .extract_nestedly(to: to, verbose: verbose?)
         end
       else
-        primary_container.extract_nestedly(to: @cask.staged_path, basename: basename, verbose: verbose?)
+        primary_container.extract_nestedly(to: to, basename: basename, verbose: verbose?)
       end
 
       return unless quarantine?
       return unless Quarantine.available?
 
-      Quarantine.propagate(from: @downloaded_path, to: @cask.staged_path)
+      Quarantine.propagate(from: primary_container.path, to: to)
     end
 
     def install_artifacts
@@ -214,9 +214,7 @@ module Cask
 
         odebug "Installing artifact of class #{artifact.class}"
 
-        if artifact.is_a?(Artifact::Binary)
-          next unless binaries?
-        end
+        next if artifact.is_a?(Artifact::Binary) && !binaries?
 
         artifact.install_phase(command: @command, verbose: verbose?, force: force?)
         already_installed_artifacts.unshift(artifact)
@@ -226,13 +224,11 @@ module Cask
     rescue => e
       begin
         already_installed_artifacts.each do |artifact|
-          next unless artifact.respond_to?(:uninstall_phase)
+          if artifact.respond_to?(:uninstall_phase)
+            odebug "Reverting installation of artifact of class #{artifact.class}"
+            artifact.uninstall_phase(command: @command, verbose: verbose?, force: force?)
+          end
 
-          odebug "Reverting installation of artifact of class #{artifact.class}"
-          artifact.uninstall_phase(command: @command, verbose: verbose?, force: force?)
-        end
-
-        already_installed_artifacts.each do |artifact|
           next unless artifact.respond_to?(:post_uninstall_phase)
 
           odebug "Reverting installation of artifact of class #{artifact.class}"
@@ -280,7 +276,7 @@ module Cask
 
     def x11_dependencies
       return unless @cask.depends_on.x11
-      raise CaskX11DependencyError, @cask.token unless MacOS::X11.installed?
+      raise CaskX11DependencyError, @cask.token unless MacOS::XQuartz.installed?
     end
 
     def graph_dependencies(cask_or_formula, acc = TopologicalHash.new)
@@ -288,10 +284,11 @@ module Cask
 
       if cask_or_formula.is_a?(Cask)
         formula_deps = cask_or_formula.depends_on.formula.map { |f| Formula[f] }
-        cask_deps = cask_or_formula.depends_on.cask.map(&CaskLoader.public_method(:load))
+        cask_deps = cask_or_formula.depends_on.cask.map { |c| CaskLoader.load(c, config: nil) }
       else
         formula_deps = cask_or_formula.deps.reject(&:build?).map(&:to_formula)
-        cask_deps = cask_or_formula.requirements.map(&:cask).compact.map(&CaskLoader.public_method(:load))
+        cask_deps = cask_or_formula.requirements.map(&:cask).compact
+                                   .map { |c| CaskLoader.load(c, config: nil) }
       end
 
       acc[cask_or_formula] ||= []
@@ -336,7 +333,7 @@ module Cask
         else
           cask_or_formula.try(:installed?)
         end
-        installed && (cask_or_formula.respond_to?(:opt_linked?) ? cask_or_formula.opt_linked? : true)
+        installed && (cask_or_formula.respond_to?(:optlinked?) ? cask_or_formula.optlinked? : true)
       end
     end
 
@@ -370,15 +367,19 @@ module Cask
             force:                   false,
           ).install
         else
-          FormulaInstaller.new(cask_or_formula, verbose: verbose?).yield_self do |fi|
-            fi.installed_as_dependency = true
-            fi.installed_on_request = false
-            fi.show_header = true
-            fi.prelude
-            fi.fetch
-            fi.install
-            fi.finish
-          end
+          fi = FormulaInstaller.new(
+            cask_or_formula,
+            **{
+              show_header:             true,
+              installed_as_dependency: true,
+              installed_on_request:    false,
+              verbose:                 verbose?,
+            }.compact,
+          )
+          fi.prelude
+          fi.fetch
+          fi.install
+          fi.finish
         end
       end
     end
@@ -455,13 +456,13 @@ module Cask
       odebug "#{artifacts.length} artifact/s defined", artifacts
 
       artifacts.each do |artifact|
-        next unless artifact.respond_to?(:uninstall_phase)
+        if artifact.respond_to?(:uninstall_phase)
+          odebug "Uninstalling artifact of class #{artifact.class}"
+          artifact.uninstall_phase(
+            command: @command, verbose: verbose?, skip: clear, force: force?, upgrade: upgrade?,
+          )
+        end
 
-        odebug "Uninstalling artifact of class #{artifact.class}"
-        artifact.uninstall_phase(command: @command, verbose: verbose?, skip: clear, force: force?, upgrade: upgrade?)
-      end
-
-      artifacts.each do |artifact|
         next unless artifact.respond_to?(:post_uninstall_phase)
 
         odebug "Post-uninstalling artifact of class #{artifact.class}"
@@ -472,7 +473,7 @@ module Cask
     end
 
     def zap
-      ohai %Q(Implied "brew cask uninstall #{@cask}")
+      ohai %Q(Implied "brew uninstall --cask #{@cask}")
       uninstall_artifacts
       if (zap_stanzas = @cask.artifacts.select { |a| a.is_a?(Artifact::Zap) }).empty?
         opoo "No zap stanza present for Cask '#{@cask}'"

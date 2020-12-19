@@ -1,3 +1,4 @@
+# typed: false
 # frozen_string_literal: true
 
 require "rubocops/conflicts"
@@ -84,6 +85,4 @@ describe RuboCop::Cop::FormulaAudit::Conflicts do
       expect(new_source).to eq(corrected_source)
     end
   end
-
-  include_examples "formulae exist", described_class::ALLOWLIST
 end

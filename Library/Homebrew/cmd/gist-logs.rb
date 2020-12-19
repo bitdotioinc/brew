@@ -1,3 +1,4 @@
+# typed: true
 # frozen_string_literal: true
 
 require "formula"
@@ -8,10 +9,13 @@ require "socket"
 require "cli/parser"
 
 module Homebrew
+  extend T::Sig
+
   extend Install
 
   module_function
 
+  sig { returns(CLI::Parser) }
   def gist_logs_args
     Homebrew::CLI::Parser.new do
       usage_banner <<~EOS
@@ -53,15 +57,7 @@ module Homebrew
       files["00.tap.out"] = { content: tap }
     end
 
-    if GitHub.api_credentials_type == :none
-      puts <<~EOS
-        You can create a new personal access token:
-          #{GitHub::ALL_SCOPES_URL}
-        #{Utils::Shell.set_variable_in_profile("HOMEBREW_GITHUB_API_TOKEN", "your_token_here")}
-
-      EOS
-      login!
-    end
+    odisabled "`brew gist-logs` with a password", "HOMEBREW_GITHUB_API_TOKEN" if GitHub.api_credentials_type == :none
 
     # Description formatted to work well as page title when viewing gist
     descr = if f.core_formula?
@@ -89,7 +85,7 @@ module Homebrew
     s.freeze
   end
 
-  # Causes some terminals to display secure password entry indicators
+  # Causes some terminals to display secure password entry indicators.
   def noecho_gets
     system "stty -echo"
     result = $stdin.gets

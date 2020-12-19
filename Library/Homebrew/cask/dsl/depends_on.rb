@@ -1,4 +1,7 @@
+# typed: false
 # frozen_string_literal: true
+
+require "delegate"
 
 require "requirements/macos_requirement"
 
@@ -7,7 +10,7 @@ module Cask
     # Class corresponding to the `depends_on` stanza.
     #
     # @api private
-    class DependsOn < DelegateClass(Hash)
+    class DependsOn < SimpleDelegator
       VALID_KEYS = Set.new([
                              :formula,
                              :cask,
@@ -21,6 +24,7 @@ module Cask
         intel:  { type: :intel, bits: 64 },
         # specific
         x86_64: { type: :intel, bits: 64 },
+        arm64:  { type: :arm, bits: 64 },
       }.freeze
 
       attr_accessor :java
@@ -60,11 +64,11 @@ module Cask
             MacOSRequirement.new([version.to_sym], comparator: comparator)
           elsif /^\s*(?<comparator><|>|[=<>]=)\s*(?<version>\S+)\s*$/ =~ args.first
             MacOSRequirement.new([version], comparator: comparator)
-          else
+          else # rubocop:disable Lint/DuplicateBranch
             MacOSRequirement.new([args.first], comparator: "==")
           end
-        rescue MacOSVersionError
-          raise "invalid 'depends_on macos' value: #{args.first.inspect}"
+        rescue MacOSVersionError => e
+          raise "invalid 'depends_on macos' value: #{e}"
         end
       end
 

@@ -1,3 +1,4 @@
+# typed: false
 # frozen_string_literal: true
 
 require "cask/cmd"
@@ -27,6 +28,7 @@ module Commands
     "environment" => "--env",
     "--config"    => "config",
     "-v"          => "--version",
+    "tc"          => "typecheck",
   }.freeze
 
   def valid_internal_cmd?(cmd)
@@ -98,18 +100,21 @@ module Commands
     cmds.sort
   end
 
-  def internal_commands_paths
-    find_commands HOMEBREW_CMD_PATH
+  def internal_commands_paths(cask: true)
+    cmds = find_commands HOMEBREW_CMD_PATH
+    # can be removed when cask commands are removed and no longer odeprecated/odisabled
+    cmds.delete(HOMEBREW_CMD_PATH/"cask.rb") unless cask
+    cmds
   end
 
   def internal_developer_commands_paths
     find_commands HOMEBREW_DEV_CMD_PATH
   end
 
-  def official_external_commands_paths
+  def official_external_commands_paths(quiet:)
     %w[bundle services test-bot].map do |cmd|
       tap = Tap.fetch("Homebrew/#{cmd}")
-      tap.install unless tap.installed?
+      tap.install(quiet: quiet) unless tap.installed?
       external_ruby_v2_cmd_path(cmd)
     end
   end

@@ -1,17 +1,22 @@
+# typed: true
 # frozen_string_literal: true
 
-require "cli/named_args"
 require "ostruct"
 
 module Homebrew
   module CLI
     class Args < OpenStruct
+      extend T::Sig
+
       attr_reader :options_only, :flags_only
 
       # undefine tap to allow --tap argument
       undef tap
 
+      sig { void }
       def initialize
+        require "cli/named_args"
+
         super()
 
         @processed_options = []
@@ -20,7 +25,7 @@ module Homebrew
 
         # Can set these because they will be overwritten by freeze_named_args!
         # (whereas other values below will only be overwritten if passed).
-        self[:named_args] = NamedArgs.new
+        self[:named] = NamedArgs.new(parent: self)
         self[:remaining] = []
       end
 
@@ -29,11 +34,12 @@ module Homebrew
       end
 
       def freeze_named_args!(named_args)
-        self[:named_args] = NamedArgs.new(
+        self[:named] = NamedArgs.new(
           *named_args.freeze,
           override_spec: spec(nil),
           force_bottle:  force_bottle?,
           flags:         flags_only,
+          parent:        self,
         )
       end
 
@@ -48,8 +54,10 @@ module Homebrew
         @flags_only = cli_args.select { |a| a.start_with?("--") }.freeze
       end
 
+      sig { returns(NamedArgs) }
       def named
-        named_args || NamedArgs.new
+        require "formula"
+        self[:named]
       end
 
       def no_named?
@@ -57,66 +65,48 @@ module Homebrew
       end
 
       def formulae
-        # TODO: enable for next major/minor release
-        # odeprecated "args.formulae", "args.named.to_formulae"
-        named.to_formulae
+        odisabled "args.formulae", "args.named.to_formulae"
       end
 
       def formulae_and_casks
-        # TODO: enable for next major/minor release
-        # odeprecated "args.formulae_and_casks", "args.named.to_formulae_and_casks"
-        named.to_formulae_and_casks
+        odisabled "args.formulae_and_casks", "args.named.to_formulae_and_casks"
       end
 
       def resolved_formulae
-        # TODO: enable for next major/minor release
-        # odeprecated "args.resolved_formulae", "args.named.to_resolved_formulae"
-        named.to_resolved_formulae
+        odisabled "args.resolved_formulae", "args.named.to_resolved_formulae"
       end
 
       def resolved_formulae_casks
-        # TODO: enable for next major/minor release
-        # odeprecated "args.resolved_formulae_casks", "args.named.to_resolved_formulae_to_casks"
-        named.to_resolved_formulae_to_casks
+        odisabled "args.resolved_formulae_casks", "args.named.to_resolved_formulae_to_casks"
       end
 
       def formulae_paths
-        # TODO: enable for next major/minor release
-        # odeprecated "args.formulae_paths", "args.named.to_formulae_paths"
-        named.to_formulae_paths
+        odisabled "args.formulae_paths", "args.named.to_formulae_paths"
       end
 
       def casks
-        # TODO: enable for next major/minor release
-        # odeprecated "args.casks", "args.named.homebrew_tap_cask_names"
-        named.homebrew_tap_cask_names
+        odisabled "args.casks", "args.named.homebrew_tap_cask_names"
       end
 
       def loaded_casks
-        # TODO: enable for next major/minor release
-        # odeprecated "args.loaded_casks", "args.named.to_cask"
-        named.to_casks
+        odisabled "args.loaded_casks", "args.named.to_cask"
       end
 
       def kegs
-        # TODO: enable for next major/minor release
-        # odeprecated "args.kegs", "args.named.to_kegs"
-        named.to_kegs
+        odisabled "args.kegs", "args.named.to_kegs"
       end
 
       def kegs_casks
-        # TODO: enable for next major/minor release
-        # odeprecated "args.kegs", "args.named.to_kegs_to_casks"
-        named.to_kegs_to_casks
+        odisabled "args.kegs", "args.named.to_kegs_to_casks"
       end
 
       def build_stable?
-        !(HEAD? || devel?)
+        !HEAD?
       end
 
       def build_from_source_formulae
         if build_from_source? || build_bottle?
-          formulae.map(&:full_name)
+          named.to_formulae_and_casks.select { |f| f.is_a?(Formula) }.map(&:full_name)
         else
           []
         end
@@ -124,7 +114,7 @@ module Homebrew
 
       def include_test_formulae
         if include_test?
-          formulae.map(&:full_name)
+          named.to_formulae.map(&:full_name)
         else
           []
         end
@@ -138,6 +128,7 @@ module Homebrew
         flag_with_value.delete_prefix(arg_prefix)
       end
 
+      sig { returns(Context::ContextStruct) }
       def context
         Context::ContextStruct.new(debug: debug?, quiet: quiet?, verbose: verbose?)
       end
@@ -171,8 +162,6 @@ module Homebrew
       def spec(default = :stable)
         if HEAD?
           :head
-        elsif devel?
-          :devel
         else
           default
         end

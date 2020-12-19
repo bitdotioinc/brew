@@ -1,3 +1,4 @@
+# typed: false
 # frozen_string_literal: true
 
 require "test/support/fixtures/testball"
@@ -282,23 +283,23 @@ describe Formula do
   describe "#latest_version_installed?" do
     let(:f) { Testball.new }
 
-    it "returns false if the #installed_prefix is not a directory" do
-      allow(f).to receive(:installed_prefix).and_return(double(directory?: false))
+    it "returns false if the #latest_installed_prefix is not a directory" do
+      allow(f).to receive(:latest_installed_prefix).and_return(double(directory?: false))
       expect(f).not_to be_latest_version_installed
     end
 
-    it "returns false if the #installed_prefix does not have children" do
-      allow(f).to receive(:installed_prefix).and_return(double(directory?: true, children: []))
+    it "returns false if the #latest_installed_prefix does not have children" do
+      allow(f).to receive(:latest_installed_prefix).and_return(double(directory?: true, children: []))
       expect(f).not_to be_latest_version_installed
     end
 
-    it "returns true if the #installed_prefix has children" do
-      allow(f).to receive(:installed_prefix).and_return(double(directory?: true, children: [double]))
+    it "returns true if the #latest_installed_prefix has children" do
+      allow(f).to receive(:latest_installed_prefix).and_return(double(directory?: true, children: [double]))
       expect(f).to be_latest_version_installed
     end
   end
 
-  describe "#installed prefix" do
+  describe "#latest_installed_prefix" do
     let(:f) do
       formula do
         url "foo"
@@ -311,17 +312,17 @@ describe Formula do
     let(:head_prefix) { HOMEBREW_CELLAR/f.name/f.head.version }
 
     it "is the same as #prefix by default" do
-      expect(f.installed_prefix).to eq(f.prefix)
+      expect(f.latest_installed_prefix).to eq(f.prefix)
     end
 
     it "returns the stable prefix if it is installed" do
       stable_prefix.mkpath
-      expect(f.installed_prefix).to eq(stable_prefix)
+      expect(f.latest_installed_prefix).to eq(stable_prefix)
     end
 
     it "returns the head prefix if it is installed" do
       head_prefix.mkpath
-      expect(f.installed_prefix).to eq(head_prefix)
+      expect(f.latest_installed_prefix).to eq(head_prefix)
     end
 
     it "returns the stable prefix if head is outdated" do
@@ -332,12 +333,12 @@ describe Formula do
       tab.source["versions"] = { "stable" => "1.0" }
       tab.write
 
-      expect(f.installed_prefix).to eq(stable_prefix)
+      expect(f.latest_installed_prefix).to eq(stable_prefix)
     end
 
     it "returns the head prefix if the active specification is :head" do
       f.active_spec = :head
-      expect(f.installed_prefix).to eq(head_prefix)
+      expect(f.latest_installed_prefix).to eq(head_prefix)
     end
   end
 
@@ -436,6 +437,43 @@ describe Formula do
 
       expect(f.alias_path).to eq(alias_path)
       expect(f.installed_alias_path).to eq(source_path.to_s)
+    end
+  end
+
+  describe "::installed_formulae_with_no_dependents" do
+    let(:formula_is_dep) do
+      formula "foo" do
+        url "foo-1.1"
+      end
+    end
+
+    let(:formula_with_deps) do
+      formula "bar" do
+        url "bar-1.0"
+      end
+    end
+
+    let(:formulae) do
+      [
+        formula_with_deps,
+        formula_is_dep,
+      ]
+    end
+
+    before do
+      allow(formula_with_deps).to receive(:runtime_formula_dependencies).and_return([formula_is_dep])
+    end
+
+    specify "without formulae parameter" do
+      allow(described_class).to receive(:installed).and_return(formulae)
+
+      expect(described_class.installed_formulae_with_no_dependents)
+          .to eq([formula_with_deps])
+    end
+
+    specify "with formulae parameter" do
+      expect(described_class.installed_formulae_with_no_dependents(formulae))
+          .to eq([formula_with_deps])
     end
   end
 
@@ -728,7 +766,7 @@ describe Formula do
       dependency = formula("dependency") { url "f-1.0" }
 
       formula.brew { formula.install }
-      keg = Keg.for(formula.installed_prefix)
+      keg = Keg.for(formula.latest_installed_prefix)
       keg.link
 
       linkage_checker = double("linkage checker", undeclared_deps: [dependency.name])
@@ -745,7 +783,7 @@ describe Formula do
       tab.runtime_dependencies = ["foo"]
       tab.write
 
-      keg = Keg.for(formula.installed_prefix)
+      keg = Keg.for(formula.latest_installed_prefix)
       keg.link
 
       expect(formula.runtime_dependencies.map(&:name)).to be_empty
@@ -756,21 +794,19 @@ describe Formula do
     f1 = formula "f1" do
       url "f1-1"
 
-      depends_on :java
       depends_on x11: :recommended
       depends_on xcode: ["1.0", :optional]
     end
     stub_formula_loader(f1)
 
-    java = JavaRequirement.new
     x11 = X11Requirement.new([:recommended])
     xcode = XcodeRequirement.new(["1.0", :optional])
 
-    expect(Set.new(f1.recursive_requirements)).to eq(Set[java, x11])
+    expect(Set.new(f1.recursive_requirements)).to eq(Set[x11])
 
     f1.build = BuildOptions.new(["--with-xcode", "--without-x11"], f1.options)
 
-    expect(Set.new(f1.recursive_requirements)).to eq(Set[java, xcode])
+    expect(Set.new(f1.recursive_requirements)).to eq(Set[xcode])
 
     f1.build = f1.stable.build
     f2 = formula "f2" do
@@ -779,14 +815,14 @@ describe Formula do
       depends_on "f1"
     end
 
-    expect(Set.new(f2.recursive_requirements)).to eq(Set[java, x11])
-    expect(Set.new(f2.recursive_requirements {})).to eq(Set[java, x11, xcode])
+    expect(Set.new(f2.recursive_requirements)).to eq(Set[x11])
+    expect(Set.new(f2.recursive_requirements {})).to eq(Set[x11, xcode])
 
     requirements = f2.recursive_requirements do |_dependent, requirement|
-      Requirement.prune if requirement.is_a?(JavaRequirement)
+      Requirement.prune if requirement.is_a?(X11Requirement)
     end
 
-    expect(Set.new(requirements)).to eq(Set[x11, xcode])
+    expect(Set.new(requirements)).to eq(Set[xcode])
   end
 
   specify "#to_hash" do
@@ -865,7 +901,7 @@ describe Formula do
         head("foo")
       end
 
-      stable_prefix = f.installed_prefix
+      stable_prefix = f.latest_installed_prefix
       stable_prefix.mkpath
 
       [["000000_1", 1], ["111111", 2], ["111111_1", 2]].each do |pkg_version_suffix, stamp|
@@ -1342,6 +1378,70 @@ describe Formula do
         setup_tab_for_prefix(head_prefix, versions: { "stable" => "1.0", "version_scheme" => 2 })
         expect(f.outdated_kegs).to be_empty
       end
+    end
+  end
+
+  describe "#any_installed_version" do
+    let(:f) do
+      Class.new(Testball) do
+        version "1.0"
+        revision 1
+      end.new
+    end
+
+    it "returns nil when not installed" do
+      expect(f.any_installed_version).to be nil
+    end
+
+    it "returns package version when installed" do
+      f.brew { f.install }
+      expect(f.any_installed_version).to eq(PkgVersion.parse("1.0_1"))
+    end
+  end
+
+  describe "#on_macos", :needs_macos do
+    let(:f) do
+      Class.new(Testball) do
+        @test = 0
+        attr_reader :test
+
+        def install
+          on_macos do
+            @test = 1
+          end
+          on_linux do
+            @test = 2
+          end
+        end
+      end.new
+    end
+
+    it "only calls code within on_macos" do
+      f.brew { f.install }
+      expect(f.test).to eq(1)
+    end
+  end
+
+  describe "#on_linux", :needs_linux do
+    let(:f) do
+      Class.new(Testball) do
+        @test = 0
+        attr_reader :test
+
+        def install
+          on_macos do
+            @test = 1
+          end
+          on_linux do
+            @test = 2
+          end
+        end
+      end.new
+    end
+
+    it "only calls code within on_linux" do
+      f.brew { f.install }
+      expect(f.test).to eq(2)
     end
   end
 end
