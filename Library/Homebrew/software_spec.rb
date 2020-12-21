@@ -440,6 +440,7 @@ class BottleSpecification
 end
 
 class PourBottleCheck
+  include OnOS
 
   def initialize(formula)
     @formula = formula
