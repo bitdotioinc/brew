@@ -34,7 +34,7 @@ module Superenv
   # @private
   def homebrew_extra_pkg_config_paths
     paths = \
-      ["/usr/lib/pkgconfig", "#{HOMEBREW_LIBRARY}/Homebrew/os/mac/pkgconfig/#{MacOS.sdk_version}"]
+      ["/usr/lib/pkgconfig", "#{HOMEBREW_LIBRARY}/Homebrew/os/mac/pkgconfig/#{MacOS.version}"]
     paths << "#{MacOS::XQuartz.lib}/pkgconfig" << "#{MacOS::XQuartz.share}/pkgconfig" if x11?
     paths
   end
@@ -98,16 +98,13 @@ module Superenv
 
   def determine_cccfg
     s = +""
-    # Fix issue with sed barfing on unicode characters on Mountain Lion
-    s << "s"
     # Fix issue with >= Mountain Lion apr-1-config having broken paths
     s << "a"
     s.freeze
   end
 
   # @private
-  def setup_build_environment(**options)
-    formula = options[:formula]
+  def setup_build_environment(formula: nil, cc: nil, build_bottle: false, bottle_arch: nil, testing_formula: false)
     sdk = formula ? MacOS.sdk_for_formula(formula) : MacOS.sdk
     if MacOS.sdk_root_needed? || sdk&.source == :xcode
       Homebrew::Diagnostic.checks(:fatal_setup_build_environment_checks)
@@ -122,7 +119,10 @@ module Superenv
       self["HOMEBREW_SDKROOT"] = nil
       self["HOMEBREW_DEVELOPER_DIR"] = nil
     end
-    generic_setup_build_environment(**options)
+    generic_setup_build_environment(
+      formula: formula, cc: cc, build_bottle: build_bottle,
+      bottle_arch: bottle_arch, testing_formula: testing_formula
+    )
 
     # Filter out symbols known not to be defined since GNU Autotools can't
     # reliably figure this out with Xcode 8 and above.

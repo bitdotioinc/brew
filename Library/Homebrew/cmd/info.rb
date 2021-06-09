@@ -24,9 +24,7 @@ module Homebrew
   sig { returns(CLI::Parser) }
   def info_args
     Homebrew::CLI::Parser.new do
-      usage_banner <<~EOS
-        `info` [<options>] [<formula>|<cask>]
-
+      description <<~EOS
         Display brief statistics for your Homebrew installation.
 
         If a <formula> or <cask> is provided, show summary of information about it.
@@ -52,6 +50,9 @@ module Homebrew
              description: "Print a JSON representation. Currently the default value for <version> is `v1` for "\
                           "<formula>. For <formula> and <cask> use `v2`. See the docs for examples of using the "\
                           "JSON output: <https://docs.brew.sh/Querying-Brew>"
+      switch "--bottle",
+             depends_on:  "--json",
+             description: "Output information about the bottles for <formula> and its dependencies."
       switch "--installed",
              depends_on:  "--json",
              description: "Print JSON of formulae that are currently installed."
@@ -60,23 +61,25 @@ module Homebrew
              description: "Print JSON of all available formulae."
       switch "-v", "--verbose",
              description: "Show more verbose analytics data for <formula>."
-
       switch "--formula", "--formulae",
              description: "Treat all named arguments as formulae."
       switch "--cask", "--casks",
              description: "Treat all named arguments as casks."
-      conflicts "--formula", "--cask"
 
       conflicts "--installed", "--all"
+      conflicts "--formula", "--cask"
+
+      %w[--cask --analytics --github].each do |conflict|
+        conflicts "--bottle", conflict
+      end
+
+      named_args [:formula, :cask]
     end
   end
 
   sig { void }
   def info
     args = info_args.parse
-
-    only = :formula if args.formula? && !args.cask?
-    only = :cask if args.cask? && !args.formula?
 
     if args.analytics?
       if args.days.present? && VALID_DAYS.exclude?(args.days)
@@ -93,17 +96,17 @@ module Homebrew
         end
       end
 
-      print_analytics(args: args, only: only)
+      print_analytics(args: args)
     elsif args.json
-      print_json(args: args, only: only)
+      print_json(args: args)
     elsif args.github?
       raise FormulaOrCaskUnspecifiedError if args.no_named?
 
-      exec_browser(*args.named.to_formulae_and_casks(only: only).map { |f| github_info(f) })
+      exec_browser(*args.named.to_formulae_and_casks.map { |f| github_info(f) })
     elsif args.no_named?
       print_statistics
     else
-      print_info(args: args, only: only)
+      print_info(args: args)
     end
   end
 
@@ -115,14 +118,14 @@ module Homebrew
     puts "#{count} #{"keg".pluralize(count)}, #{HOMEBREW_CELLAR.dup.abv}"
   end
 
-  sig { params(args: CLI::Args, only: T.nilable(Symbol)).void }
-  def print_analytics(args:, only: nil)
+  sig { params(args: CLI::Args).void }
+  def print_analytics(args:)
     if args.no_named?
       Utils::Analytics.output(args: args)
       return
     end
 
-    args.named.to_formulae_and_casks_and_unavailable(only: only).each_with_index do |obj, i|
+    args.named.to_formulae_and_casks_and_unavailable.each_with_index do |obj, i|
       puts unless i.zero?
 
       case obj
@@ -138,9 +141,9 @@ module Homebrew
     end
   end
 
-  sig { params(args: CLI::Args, only: T.nilable(Symbol)).void }
-  def print_info(args:, only: nil)
-    args.named.to_formulae_and_casks_and_unavailable(only: only).each_with_index do |obj, i|
+  sig { params(args: CLI::Args).void }
+  def print_info(args:)
+    args.named.to_formulae_and_casks_and_unavailable.each_with_index do |obj, i|
       puts unless i.zero?
 
       case obj
@@ -172,8 +175,8 @@ module Homebrew
     version_hash[version]
   end
 
-  sig { params(args: CLI::Args, only: T.nilable(Symbol)).void }
-  def print_json(args:, only: nil)
+  sig { params(args: CLI::Args).void }
+  def print_json(args:)
     raise FormulaOrCaskUnspecifiedError if !(args.all? || args.installed?) && args.no_named?
 
     json = case json_version(args.json)
@@ -188,25 +191,33 @@ module Homebrew
         args.named.to_formulae
       end
 
-      formulae.map(&:to_hash)
+      if args.bottle?
+        formulae.map(&:to_recursive_bottle_hash)
+      else
+        formulae.map(&:to_hash)
+      end
     when :v2
       formulae, casks = if args.all?
         [Formula.sort, Cask::Cask.to_a.sort_by(&:full_name)]
       elsif args.installed?
         [Formula.installed.sort, Cask::Caskroom.casks.sort_by(&:full_name)]
       else
-        args.named.to_formulae_to_casks(only: only)
+        args.named.to_formulae_to_casks
       end
 
-      {
-        "formulae" => formulae.map(&:to_hash),
-        "casks"    => casks.map(&:to_h),
-      }
+      if args.bottle?
+        { "formulae" => formulae.map(&:to_recursive_bottle_hash) }
+      else
+        {
+          "formulae" => formulae.map(&:to_hash),
+          "casks"    => casks.map(&:to_h),
+        }
+      end
     else
       raise
     end
 
-    puts JSON.generate(json)
+    puts JSON.pretty_generate(json)
   end
 
   def github_remote_path(remote, path)
@@ -218,26 +229,20 @@ module Homebrew
   end
 
   def github_info(f)
-    if f.tap
-      if remote = f.tap.remote
-        path = if f.class.superclass == Formula
-          f.path.relative_path_from(f.tap.path)
-        elsif f.is_a?(Cask::Cask)
-          f.sourcefile_path.relative_path_from(f.tap.path)
-        end
-        github_remote_path(remote, path)
-      else
-        f.path
-      end
-    else
-      f.path
+    return f.path if f.tap.blank? || f.tap.remote.blank?
+
+    path = if f.class.superclass == Formula
+      f.path.relative_path_from(f.tap.path)
+    elsif f.is_a?(Cask::Cask)
+      f.sourcefile_path.relative_path_from(f.tap.path)
     end
+    github_remote_path(f.tap.remote, path)
   end
 
   def info_formula(f, args:)
     specs = []
 
-    if stable = f.stable
+    if (stable = f.stable)
       s = "stable #{stable.version}"
       s += " (bottled)" if stable.bottled? && f.pour_bottle?
       specs << s
@@ -348,6 +353,7 @@ module Homebrew
   end
 
   def info_cask(cask, args:)
+    require "cask/cmd"
     require "cask/cmd/info"
 
     Cask::Cmd::Info.info(cask)

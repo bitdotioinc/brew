@@ -14,9 +14,7 @@ module Homebrew
   sig { returns(CLI::Parser) }
   def style_args
     Homebrew::CLI::Parser.new do
-      usage_banner <<~EOS
-        `style` [<options>] [<file>|<tap>|<formula>]
-
+      description <<~EOS
         Check formulae or files for conformance to Homebrew style guidelines.
 
         Lists of <file>, <tap> and <formula> may not be combined. If none are
@@ -42,19 +40,18 @@ module Homebrew
 
       conflicts "--formula", "--cask"
       conflicts "--only-cops", "--except-cops"
+
+      named_args [:file, :tap, :formula, :cask]
     end
   end
 
   def style
     args = style_args.parse
 
-    only = :formula if args.formula? && !args.cask?
-    only = :cask if args.cask? && !args.formula?
-
     target = if args.no_named?
       nil
     else
-      args.named.to_paths(only: only)
+      args.named.to_paths
     end
 
     only_cops = args.only_cops

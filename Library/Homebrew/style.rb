@@ -72,18 +72,26 @@ module Homebrew
       end
     end
 
+    RUBOCOP = (HOMEBREW_LIBRARY_PATH/"utils/rubocop.rb").freeze
+
     def run_rubocop(files, output_type,
                     fix: false, except_cops: nil, only_cops: nil, display_cop_names: false, reset_cache: false,
                     debug: false, verbose: false)
       Homebrew.install_bundler_gems!
-      require "rubocop"
+
+      require "warnings"
+
+      Warnings.ignore :parser_syntax do
+        require "rubocop"
+      end
+
       require "rubocops"
 
       args = %w[
         --force-exclusion
       ]
       args << if fix
-        "--auto-correct"
+        "-A"
       else
         "--parallel"
       end
@@ -144,11 +152,11 @@ module Homebrew
 
         args << "--color" if Tty.color?
 
-        system cache_env, RUBY_PATH, ENV["HOMEBREW_RUBY_WARNINGS"], "-S", "rubocop", *args
+        system cache_env, RUBY_PATH, RUBOCOP, *args
         $CHILD_STATUS.success?
       when :json
         result = system_command RUBY_PATH,
-                                args: [ENV["HOMEBREW_RUBY_WARNINGS"], "-S", "rubocop", "--format", "json", *args],
+                                args: [RUBOCOP, "--format", "json", *args],
                                 env:  cache_env
         json = json_result!(result)
         json["files"]
@@ -156,25 +164,28 @@ module Homebrew
     end
 
     def run_shellcheck(files, output_type)
-      shellcheck   = which("shellcheck")
+      shellcheck   = Formula["shellcheck"].opt_bin/"shellcheck" if Formula["shellcheck"].any_version_installed?
+      shellcheck ||= which("shellcheck")
       shellcheck ||= which("shellcheck", ENV["HOMEBREW_PATH"])
       shellcheck ||= begin
         ohai "Installing `shellcheck` for shell style checks..."
         safe_system HOMEBREW_BREW_FILE, "install", "shellcheck"
-        which("shellcheck") || which("shellcheck", ENV["HOMEBREW_PATH"])
+        Formula["shellcheck"].opt_bin/"shellcheck"
       end
 
       if files.empty?
         files = [
           HOMEBREW_BREW_FILE,
-          # TODO: HOMEBREW_REPOSITORY/"completions/bash/brew",
-          *Pathname.glob("#{HOMEBREW_LIBRARY}/Homebrew/*.sh"),
-          *Pathname.glob("#{HOMEBREW_LIBRARY}/Homebrew/cmd/*.sh"),
-          *Pathname.glob("#{HOMEBREW_LIBRARY}/Homebrew/utils/*.sh"),
+          HOMEBREW_REPOSITORY/"completions/bash/brew",
+          *HOMEBREW_LIBRARY.glob("Homebrew/*.sh"),
+          *HOMEBREW_LIBRARY.glob("Homebrew/shims/**/*").map(&:realpath).uniq
+                           .reject { |path| path.directory? || path.basename.to_s == "cc" },
+          *HOMEBREW_LIBRARY.glob("Homebrew/{dev-,}cmd/*.sh"),
+          *HOMEBREW_LIBRARY.glob("Homebrew/{cask/,}utils/*.sh"),
         ]
       end
 
-      args = ["--shell=bash", "--", *files] # TODO: Add `--enable=all` to check for more problems.
+      args = ["--shell=bash", "--enable=all", "--external-sources", "--source-path=#{HOMEBREW_LIBRARY}", "--", *files]
 
       case output_type
       when :print
